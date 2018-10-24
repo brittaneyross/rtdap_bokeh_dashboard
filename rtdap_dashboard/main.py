@@ -33,20 +33,20 @@ from bokeh.io import curdoc
 from scripts.select import selection_tab
 
 #table
-# vds_table = pd.read_csv(join(dirname(__file__),'data','vds_table_2008_2018.csv'))
+vds_table = pd.read_csv(join(dirname(__file__),'data','vds_table_2008_2018.csv'))
+
 #
-# #
-# vds_table['corridor'] = vds_table['corridor'].fillna('N/A')
-# vds_table['corridor'] = np.where(vds_table['corridor'] == '0', 'N/A',vds_table['corridor'])
-#
-# vds_table['hour'] = vds_table['hour'].replace([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-#                                               [1,1,1,1,1,1,2,3,3,4, 5, 5, 5, 5, 6, 6, 7, 7, 8, 8, 1, 1, 1, 1])
-#
-# vds_table['date'] = (vds_table.year.astype(str)+"-"+vds_table.month.astype(str)+"-"+vds_table.day.astype(str)).apply(str)
-#
-# vds_table['date'] = pd.to_datetime(vds_table['date'],format='%Y-%m-%d')
-#
-# vds_table['dow'] = vds_table['dow'].replace([1,2,3,4,5],['Monday','Tuesday','Wednesday','Thursday','Friday'])
+vds_table['corridor'] = vds_table['corridor'].fillna('N/A')
+vds_table['corridor'] = np.where(vds_table['corridor'] == '0', 'N/A',vds_table['corridor'])
+
+vds_table['hour'] = vds_table['hour'].replace([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+                                              [1,1,1,1,1,1,2,3,3,4, 5, 5, 5, 5, 6, 6, 7, 7, 8, 8, 1, 1, 1, 1])
+
+vds_table['date'] = (vds_table.year.astype(str)+"-"+vds_table.month.astype(str)+"-"+vds_table.day.astype(str)).apply(str)
+
+vds_table['date'] = pd.to_datetime(vds_table['date'],format='%Y-%m-%d')
+
+vds_table['dow'] = vds_table['dow'].replace([1,2,3,4,5],['Monday','Tuesday','Wednesday','Thursday','Friday'])
 
 #side panel and view
 def analytics_tab():
@@ -151,10 +151,10 @@ l2=Div(text="Test")
 l3=Div(text="Test")
 
 tab_0 = Panel(child=l0, title ='Overview')
-#tab_1 = Panel(child=selection_tab(vds_table), title ='Data Selection', css_classes = ["w3-light-grey"])
+tab_1 = Panel(child=selection_tab(vds_table), title ='Data Selection', css_classes = ["w3-light-grey"])
 tab_2 = Panel(child=analytics_tab(), title ='Analytics')
 tab_3 = Panel(child=compare_tab(), title ='Comparison')
 
-tabs = Tabs(tabs = [tab_0, tab_2, tab_3], sizing_mode = "scale_width")
+tabs = Tabs(tabs = [tab_0, tab_1, tab_2, tab_3], sizing_mode = "scale_width")
 
 curdoc().add_root(tabs)
