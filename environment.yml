@@ -1,0 +1,8 @@
+dependencies:
+  - bokeh
+  - nbserverproxy
+  - pandas
+  - numpy
+  - fiona
+  - geopandas
+  - shapely
