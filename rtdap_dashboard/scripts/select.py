@@ -1,15 +1,17 @@
 #libraries
 import pandas as pd
 import numpy as np
+from numpy.polynomial.polynomial import polyfit
 import random
 from datetime import datetime, date
+from scipy import stats
 
 #bokeh
 from bokeh.io import show, output_notebook, push_notebook
 from bokeh.plotting import figure
 
 from bokeh.layouts import layout, column, row, WidgetBox
-from bokeh.models import CustomJS, Panel, Spacer, HoverTool, LogColorMapper, ColumnDataSource,FactorRange, RangeSlider,NumeralTickFormatter
+from bokeh.models import CustomJS, Panel, Spacer, HoverTool, LogColorMapper, ColumnDataSource,FactorRange, RangeSlider,NumeralTickFormatter,LinearColorMapper
 from bokeh.models.widgets import Div, Tabs, Paragraph, Dropdown, Button, PreText, Toggle, Select,DatePicker,DateRangeSlider
 
 from bokeh.tile_providers import STAMEN_TERRAIN_RETINA,CARTODBPOSITRON_RETINA
@@ -17,20 +19,29 @@ from bokeh.tile_providers import STAMEN_TERRAIN_RETINA,CARTODBPOSITRON_RETINA
 from shapely.geometry import Polygon, Point, MultiPoint, MultiPolygon
 import geopandas as gpd
 
-from bokeh.transform import factor_cmap
+from bokeh.transform import factor_cmap, linear_cmap,transform
 from bokeh.application.handlers import FunctionHandler
 from bokeh.application import Application
 from bokeh.core.properties import value
 
 #color
-from bokeh.palettes import Spectral6
+from bokeh.palettes import RdYlGn
 
 from bokeh.io import curdoc
 
-def selection_tab(rtdap_data):
+widget_width = 225
+
+def selection_tab(rtdap_data,hwynet_shp):
+
+    """
+    return selection tab contents
+
+    Keyword arguments:
+    rtdap_data - dataframe containing rtdap vds detail data
+    """
 
     def make_base_map(tile_map=CARTODBPOSITRON_RETINA,map_width=800,map_height=500, xaxis=None, yaxis=None,
-                    xrange=(-9990000,-9619944), yrange=(5011119,5310000),plot_tools="pan,wheel_zoom,reset,save"):
+                    xrange=(-9810000, -9745000), yrange=(5130000, 5130000),plot_tools="pan,wheel_zoom,reset,save,hover"):
 
         p = figure(tools=plot_tools, width=map_width,height=map_height, x_axis_location=xaxis, y_axis_location=yaxis,
                     x_range=xrange, y_range=yrange, toolbar_location="above")
@@ -44,23 +55,65 @@ def selection_tab(rtdap_data):
 
         return p
 
-    def rtdap_avg(df,corr,value):
+    def make_line_data(shp, roadname):
+
+        def getLineCoords(row, geom, coord_type):
+            """Returns a list of coordinates ('x' or 'y') of a LineString geometry"""
+            if coord_type == 'x':
+                return list( row[geom].coords.xy[0] )
+            elif coord_type == 'y':
+                return list( row[geom].coords.xy[1] )
+
+        gpd_shp = gpd.read_file(shp)
+
+        gpd_shp['x'] = gpd_shp.apply(getLineCoords, geom='geometry', coord_type='x', axis=1)
+
+        # Calculate y coordinates of the line
+        gpd_shp['y'] = gpd_shp.apply(getLineCoords, geom='geometry', coord_type='y', axis=1)
+
+        # Make a copy and drop the geometry column
+        shp_df = gpd_shp.drop('geometry', axis=1).copy()
+
+        df = shp_df.loc[shp_df['ROADNAME'] == roadname]
+
+        source = ColumnDataSource(df)
+
+        return source
+
+
+
+    def make_line_map(base_map,source):
+
+        p = base_map
+
+        # Point DataSource
+        mapper = LinearColorMapper(palette=RdYlGn[5], low=source.data['POSTEDSPEE'].min(),
+                               high=source.data['POSTEDSPEE'].max())
+        p.multi_line('x', 'y', source=source, color=transform('POSTEDSPEE',mapper), line_width=2)
+
+        return p
+
+    def rtdap_avg(df,value):
 
         """
-        returns mean for specificed attribute by highway corridor
+        returns average daily volume, speed, occupancy, time etc by highway corridor
 
         Keyword arguments:
         df -- dataframe to filter by corridor and calculate mean
-        corr -- corridor name
         value -- dataframe column name to calculate mean
         """
 
-        df_corr = df.loc[df['corridor'] == corr]
-        mean_value = df_corr[value].mean()
+        if value == 'avg_volume':
+            df['hour_volume'] = df.groupby(['ROADNAME','year','doy','hour'])[value].transform('mean')
+            df['sum_volume'] = df.groupby(['ROADNAME','year','doy'])['hour_volume'].transform('sum')
+            #get average weekday volume
+            mean_value = df['sum_volume'].mean()
+        else:
+            mean_value = df[value].mean()
 
         return mean_value
 
-    def filter_selection(df, corr, date_s, date_e, weekday, tod):
+    def filter_selection(df, date_s, date_e):
 
         """
         returns subset of data based on corridor and time selections
@@ -74,20 +127,10 @@ def selection_tab(rtdap_data):
         tod -- time of day (8 tod time periods)
         """
 
-        tod_start = tod[0]
-        tod_end = tod[1]
         date_start = datetime.strptime(date_s, '%Y-%m-%d')
         date_end = datetime.strptime(date_e, '%Y-%m-%d')
 
-        if weekday == 'All':
-            weekday = df['dow'].drop_duplicates().values.tolist()
-        else:
-            weekday = [weekday]
-
-        select_df = df.loc[(df['corridor'] == corr) &\
-                           (df['date']>=date_start) & (df['date']<=date_end) &\
-                           (df['dow'].isin(weekday)) &\
-                           (df['hour']>=tod_start) & (df['hour']<=tod_end)]
+        select_df = df.loc[(df['date']>=date_start) & (df['date']<=date_end)]
 
         return select_df
 
@@ -106,8 +149,17 @@ def selection_tab(rtdap_data):
         missing -- dataframe column name of missing values
         """
 
-        df['freq'] = 1
-        df_groupby = df.groupby(group).agg({'freq':'count',
+        #update to present average volumes for specific time period
+        #compared to average day with same tod selected
+        #add tod as argument to summarize summarize_metrics ***
+
+        if select == 'avg_volume':
+            #sum up to date to get total weekday volume
+            df['hour_volume'] = df.groupby(['ROADNAME','year','doy','hour'])[select].transform('mean')
+            df['sum_volume'] = df.groupby(['ROADNAME','year','doy'])['hour_volume'].transform('sum')
+            select = 'sum_volume'
+
+        df_groupby = df.groupby(group).agg({'frequency':sum,
                                         select:np.mean,
                                         missing:sum}).reset_index()
 
@@ -126,14 +178,14 @@ def selection_tab(rtdap_data):
         df -- dataframe to derive content of barchart
         col -- column name for values to diplay in graph
         """
-        df_avg = full_df.groupby('FieldDeviceID').agg({'avgSpeed':np.mean})
+        df_avg = full_df.groupby('ROADNAME').agg({'avg_speed':np.mean})
 
-        df_select= df.groupby('FieldDeviceID').agg({'avgSpeed':np.mean})
+        df_select = df.groupby('ROADNAME').agg({'avg_speed':np.mean})
         df_select.columns = ['speed']
 
         diff = df_avg.merge(df_select,how='left',left_index=True, right_index=True).fillna(0)
-        diff_no_zero = diff.loc[(diff['avgSpeed'] > 0 )& (diff['speed'] > 0)]
-        diff_no_zero['speed_difference'] = diff_no_zero['avgSpeed'] - diff_no_zero['speed']
+        diff_no_zero = diff.loc[(diff['avg_speed'] > 0 )& (diff['speed'] > 0)]
+        diff_no_zero['speed_difference'] = diff_no_zero['avg_speed'] - diff_no_zero['speed']
         diff_no_zero = diff_no_zero.reset_index()
 
         diff_no_zero['bins'] = pd.cut(diff_no_zero['speed_difference'],bins=list(range(-20,22)),
@@ -141,7 +193,7 @@ def selection_tab(rtdap_data):
 
         source = ColumnDataSource(data = diff_no_zero.groupby('bins').agg({'speed_difference':'count'}).reset_index())
 
-        p = figure(plot_width=1000, plot_height=150, title="Speed Difference Distribution", toolbar_location="above")
+        p = figure(plot_width=1000, plot_height=300, title="Speed Difference Distribution", toolbar_location="above")
 
         p.vbar(x='bins' , top='speed_difference', width=1, color='navy', alpha=0.5, source = source)
 
@@ -182,7 +234,7 @@ def selection_tab(rtdap_data):
                 ]
             )
         tools = ['reset','save',hover]
-        p = figure(plot_width=400, plot_height=175, toolbar_location="above",
+        p = figure(plot_width=400, plot_height=275, toolbar_location="above",
                    title = 'Mean Difference', tools = tools)
 
         p.hbar(y='order', height=0.5, left=0,fill_color ='color',line_color=None,
@@ -198,19 +250,79 @@ def selection_tab(rtdap_data):
 
         return source, p
 
+    def scatter_data(df, select_df, value):
 
-    def scatter_plot(title_text):
-        rng = np.random.RandomState(0)
-        x = rng.randn(100)
-        y = rng.randn(100)
+        df_avg = df.groupby('ABB').agg({value : np.mean})
+        df_avg.columns = ['Average']
+
+        select_avg = select_df.groupby('ABB').agg({value : np.mean})
+        select_avg.columns = ['Selection']
+
+        scatter_data = df_avg.merge(select_avg, how='left',
+                                    left_index=True, right_index=True).reset_index().dropna()
+
+        scatter_data_ = scatter_data.loc[(scatter_data['Average'] > 0) & (scatter_data['Selection'] > 0)]
+
+        abb = scatter_data_['ABB'].values.tolist()
+
+        avg_values = scatter_data_['Average']
+        selection_averages = scatter_data_['Selection']
+
+        #b, m = polyfit(avg_values, selection_averages, 1)
+        slope, intercept, r_value, p_value, std_err = stats.linregress(avg_values,selection_averages)
+        # We need to generate actual values for the regression line.
+        #r_x, r_y = zip(*((i, i*regression[0] + regression[1]) for i in range(len(scatter_data))))
+
+
+        return selection_averages, avg_values,  slope, intercept
+
+    def scatter_src(x,y,slope, intercept):
+
+        if type(y) is int:
+            df = pd.DataFrame({'x': x})
+            df['y'] = slope*df['x']+intercept
+
+            x = df['x']
+            y = df['y']
 
         source = ColumnDataSource(
                 data=dict(
-                    x=rng.randn(100),
-                    y=rng.randn(100),
-                    desc=['A', 'b', 'C', 'd', 'E']*20,
+                    x=x,
+                    y=y,
                 )
             )
+
+        return source
+
+    def scatter_figure(title_text):
+        p = figure(plot_width=400, plot_height=400, tools=['hover','box_select'], toolbar_location="above",
+                   title=title_text)
+
+        p.background_fill_alpha = 0.5
+        p.border_fill_color = None
+
+        return p
+
+    def scatter_plot(df, select_df, value, title_text):
+
+        df_avg = df.groupby('ABB').agg({value : np.mean})
+        df_avg.columns = ['Average']
+
+        select_avg = select_df.groupby('ABB').agg({value : np.mean})
+        select_avg.columns = ['Selection']
+
+        scatter_data = df_avg.merge(select_avg, how='left',
+                                    left_index=True, right_index=True).reset_index().fillna(0)
+
+        abb = scatter_data['ABB'].values.tolist()
+
+        avg_values = scatter_data['Average']
+        selection_averages = scatter_data['Selection']
+
+        b, m = polyfit(avg_values, selection_averages, 1)
+
+        # We need to generate actual values for the regression line.
+        r_x, r_y = zip(*((i, i*regression[0] + regression[1]) for i in range(len(scatter_data))))
 
         hover = HoverTool(
                 tooltips=[
@@ -220,25 +332,18 @@ def selection_tab(rtdap_data):
                 ]
             )
 
-        p = figure(plot_width=300, plot_height=250, tools=[hover, 'box_select'], toolbar_location="above",
+        p = figure(plot_width=350, plot_height=300, tools=['hover','box_select'], toolbar_location="above",
                    title=title_text)
 
-        p.circle('x', 'y', size=5, source=source)
+        p.line(r_x, r_y, color="red")
+        #p.circle('x', 'y', size=5, source=source)
+        p.scatter(avg_values, selection_averages,radius=.5)
+
         #p.background_fill_color = None
         p.background_fill_alpha = 0.5
         p.border_fill_color = None
 
         return p
-
-
-
-    """
-    return selection tab contents
-
-    Keyword arguments:
-    rtdap_data - dataframe containing rtdap vds detail data
-    """
-
     #-----------------------------------------------------------------------------------------------------------------
     #submit_selection -- Data Selection Update Function
 
@@ -249,21 +354,31 @@ def selection_tab(rtdap_data):
         user selections in the data review panel
         """
 
-        avgs_speed = rtdap_avg(rtdap_data, corridor_select.value,'avgSpeed')
-        avgs_occ = rtdap_avg(rtdap_data, corridor_select.value,'avgOccupancy')
-        avgs_volume = rtdap_avg(rtdap_data, corridor_select.value,'avgVolume')
+        tod_start = time_of_day.value[0]
+        tod_end = time_of_day.value[1]
 
-        filtered_data = filter_selection(rtdap_data, corridor_select.value,
+        if day_of_week.value == 'All':
+            weekday = rtdap_data['dow'].drop_duplicates().values.tolist()
+        else:
+            weekday = [day_of_week.value]
+
+        df_for_avg = rtdap_data.loc[(rtdap_data['ROADNAME'] == corridor_select.value) &\
+                                   (rtdap_data['dow'].isin(weekday)) &\
+                                   (rtdap_data['hour']>=tod_start) & (rtdap_data['hour']<=tod_end)]
+
+        avgs_speed = rtdap_avg(df_for_avg, 'avg_speed')
+        avgs_occ = rtdap_avg(df_for_avg, 'avg_occupancy')
+        avgs_volume = rtdap_avg(df_for_avg, 'avg_volume')
+
+        filtered_data = filter_selection(df_for_avg,
                                          str(date_picker_start.value),
-                                         str(date_picker_end.value),
-                                         day_of_week.value,
-                                         time_of_day.value)
+                                         str(date_picker_end.value))
 
-        speed = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_speed,'avgSpeed',
+        speed = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_speed,'avg_speed',
                                   'Speed','missing_speed')
-        occ = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_occ,'avgOccupancy',
+        occ = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_occ,'avg_occupancy',
                                 'Occupancy', 'missing_occ')
-        volume = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_volume,'avgVolume',
+        volume = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_volume,'avg_volume',
                                    'Volume', 'missing_vol')
 
         summary_df = speed.append(occ)
@@ -278,10 +393,32 @@ def selection_tab(rtdap_data):
                                                         formatters = [str,'{:20,}'.format,
                                                         '{:20,.1f}'.format,'{:20,.1f}%'.format,
                                                         '{:20,}'.format],classes=[ "w3-table" , "w3-hoverable","w3-small"]))
+
         if len(summary_df) > 0:
             new_df = summary_df.fillna(0)
             bar_viz_new = hbar_chart(new_df,'Mean Diff')[0]
             bar_viz_src.data.update(bar_viz_new.data)
+
+            shp_df = make_line_data(hwynet_shp, corridor_select.value)
+
+            #map data
+            hwy_src.data.update(shp_df.data)
+
+            #scatter data
+            speed_data = scatter_data(df_for_avg, filtered_data, 'avg_speed')
+            speed_pt_new = scatter_src(speed_data[0],speed_data[1],-1,-1)
+            speed_line_new = scatter_src(speed_data[0],0,speed_data[2],speed_data[3])
+
+            speed_line.data.update(speed_line_new.data)
+            speed_pt.data.update(speed_pt_new.data)
+
+            vol_data = scatter_data(df_for_avg, filtered_data, 'avg_volume')
+            v_pt_new = scatter_src(vol_data[0],vol_data[1],-1,-1)
+            v_line_new = scatter_src(vol_data[0],0,vol_data[2],vol_data[3])
+
+            v_line.data.update(v_line_new.data)
+            v_pt.data.update(v_pt_new.data)
+
     #-----------------------------------------------------------------------------------------------------------------
     #Data Review Panel
 
@@ -289,23 +426,25 @@ def selection_tab(rtdap_data):
     panel_text = Div(text="""Lorem Ipsum is simply dummy text of the printing and typesetting industry.
            Lorem Ipsum has been the industry's standard dummy text ever since the 1500s,
            when an unknown printer took a galley of type and scrambled it to make a type
-           specimen book.""", css_classes = ["panel-content","w3-text-white"])
+           specimen book.""", css_classes = ["w3-bar-item","w3-text-white"], width = widget_width)
 
     #Panel Buttons
-    corridor_select = Select(options=rtdap_data['corridor'].drop_duplicates().values.tolist(), title = 'Corridor:',
-                            height=60, value = 'Dan Ryan Express Lane',css_classes = ["panel-content"])
+    gpd_shp = gpd.read_file(hwynet_shp)
+
+    corridor_select = Select(options=rtdap_data['ROADNAME'].drop_duplicates().values.tolist(), title = 'Corridor:',
+                            height=60, value = 'LAKE SHORE DR SB',css_classes = ["w3-bar-item"],width = widget_width)
 
     date_picker_start = DatePicker(min_date = date(2015, 1, 1),max_date = date(2018, 12, 31),
-                            css_classes = ["panel-content"], title = "Start Date:",
-                            height=60, value = date(2015, 12, 31))
+                            css_classes = ["w3-bar-item"], title = "Start Date:",
+                            height=60, value = date(2015, 12, 31), width = widget_width)
 
     date_picker_end = DatePicker(min_date = date(2015, 1, 1),max_date = date(2018, 12, 31),
-                             css_classes = ["panel-content"], title = "End Date:",
-                            height=60, value = date(2017, 12, 31))
+                             css_classes = ["w3-bar-item"], title = "End Date:",
+                            height=60, value = date(2017, 12, 31), width = widget_width)
 
-    time_of_day = RangeSlider(start = 1, end= 8, step=1, value=(1, 2),
+    time_of_day = RangeSlider(start = 1, end= 8, step=1, value=(1, 8),
                               title="Time of Day:", bar_color="black",
-                              css_classes = ["panel-content"])
+                              css_classes = ["w3-bar-item"], width = widget_width)
 
     tod_description = Div(text="""Time of Day Categories:<br>
                           <ol>
@@ -318,13 +457,13 @@ def selection_tab(rtdap_data):
                           <li>4pm-6pm</li>
                           <li>6pm-8pm</li>
                           </ol>""",
-                          css_classes = ["panel-content", "caption","w3-text-white"])
+                          css_classes = ["w3-bar-item", "caption","w3-text-white"])
 
     day_of_week = Select(options=['All'] + rtdap_data['dow'].drop_duplicates().values.tolist(),
-                        title = "Day of Week:",css_classes = ["panel-content"], height=60,
-                        value = "All")
+                        title = "Day of Week:",css_classes = ["w3-bar-item"], height=60,
+                        value = "All", width = widget_width)
 
-    select_data = Button(label="Select Subset",css_classes = ["panel-content"], height=60)
+    select_data = Button(label="Select Subset",css_classes = ["w3-bar-item"], height=60, width = 150)
 
     select_data.on_click(submit_selection)
     #-----------------------------------------------------------------------------------------------------------------
@@ -332,19 +471,30 @@ def selection_tab(rtdap_data):
 
     #-----------------------------------------------------------------------------------------------------------------
     #Create initial content
-    avgs_speed = rtdap_avg(rtdap_data, corridor_select.value,'avgSpeed')
-    avgs_occ = rtdap_avg(rtdap_data, corridor_select.value,'avgOccupancy')
-    avgs_volume = rtdap_avg(rtdap_data, corridor_select.value,'avgVolume')
+    tod_start = time_of_day.value[0]
+    tod_end = time_of_day.value[1]
 
-    filtered_data = filter_selection(rtdap_data, corridor_select.value, str(date_picker_start.value),
-                                     str(date_picker_end.value),
-                                     day_of_week.value, time_of_day.value)
+    if day_of_week.value == 'All':
+        weekday = rtdap_data['dow'].drop_duplicates().values.tolist()
+    else:
+        weekday = [day_of_week.value]
 
-    speed = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_speed,'avgSpeed',
+    df_for_avg = rtdap_data.loc[(rtdap_data['ROADNAME'] == corridor_select.value) &\
+                               (rtdap_data['dow'].isin(weekday)) &\
+                               (rtdap_data['hour']>=tod_start) & (rtdap_data['hour']<=tod_end)]
+
+    avgs_speed = rtdap_avg(df_for_avg, 'avg_speed')
+    avgs_occ = rtdap_avg(df_for_avg, 'avg_occupancy')
+    avgs_volume = rtdap_avg(df_for_avg, 'avg_volume')
+
+    filtered_data = filter_selection(df_for_avg, str(date_picker_start.value),
+                                     str(date_picker_end.value))
+
+    speed = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_speed,'avg_speed',
                               'Speed','missing_speed')
-    occ = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_occ,'avgOccupancy',
+    occ = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_occ,'avg_occupancy',
                             'Occupancy', 'missing_occ')
-    volume = summarize_metrics(filtered_data, corridor_select.value, 'corridor',avgs_volume,'avgVolume',
+    volume = summarize_metrics(filtered_data, corridor_select.value, 'ROADNAME',avgs_volume,'avg_volume',
                                'Volume', 'missing_vol')
 
     summary_df = speed.append(occ)
@@ -353,13 +503,19 @@ def selection_tab(rtdap_data):
     summary_df_tbl['Mean Diff'] = summary_df_tbl['Mean Diff'] * 100
     summary_df_tbl = summary_df_tbl.reset_index()
 
-    summary_title = Div(text= "<h1>"+corridor_select.value+" Summary</h1>", width = 2000, css_classes = ["w3-panel","w3-white"])
+    summary_title = Div(text= "<h1>"+corridor_select.value+" Summary</h1>", width = 2000, css_classes = ["w3-bar-fixed","w3-white"])
     summary_table = Div(text="", width = 550, height = 150)
 
     summary_table.text = str(summary_df_tbl.fillna(0).to_html(index=False,
                                                     formatters = [str,'{:20,}'.format,
                                                     '{:20,.1f}'.format,'{:20,.1f}%'.format,
                                                     '{:20,}'.format],classes=[ "w3-table" , "w3-hoverable","w3-small"]))
+
+    #Descriptive text
+    sum_tbl_def = Div(text="""Lorem Ipsum is simply dummy text of the printing and
+    typesetting industry. Lorem Ipsum has been the industry's standard
+    dummy text ever since the 1500s, when an unknown printer took a
+     galley of type and scrambled it to make a type specimen book""")
 
     line = Div(text="<hr>", css_classes = ["w3-container"], width = 1000)
     #-----------------------------------------------------------------------------------------------------------------
@@ -380,35 +536,58 @@ def selection_tab(rtdap_data):
     bar_viz_chart = bar_viz[1]
 
 
-    volume_scatter = scatter_plot('Volumes')
-    time_scatter = scatter_plot('Time')
+    #volume_scatter = scatter_plot(df_for_avg,filtered_data,'avg_speed','Volumes')
+    #time_scatter = scatter_plot(df_for_avg,filtered_data,'avg_speed','Volumes')
+    #scatter plot
 
-    corr_df = rtdap_data.loc[rtdap_data['corridor'] == corridor_select.value]
+    s_data = scatter_data(df_for_avg, filtered_data, 'avg_speed')
+    speed_pt = scatter_src(s_data[0],s_data[1],-1,-1)
+    speed_line = scatter_src(s_data[0],0,s_data[2],s_data[3])
+
+    speed_scatter = scatter_figure('Speed')
+    speed_scatter.line('x','y', source = speed_line, line_color = 'red')
+    speed_scatter.circle('x', 'y', size=5, source=speed_pt)
+
+    v_data = scatter_data(df_for_avg, filtered_data, 'avg_volume')
+    v_pt = scatter_src(v_data[0],v_data[1],-1,-1)
+    v_line = scatter_src(v_data[0],0,v_data[2],v_data[3])
+
+    volume_scatter = scatter_figure('Volumes')
+    volume_scatter.line('x','y', source = v_line, line_color = 'red')
+    volume_scatter.circle('x', 'y', size=5, source=v_pt)
+
+
+    corr_df = rtdap_data.loc[rtdap_data['ROADNAME'] == corridor_select.value]
     speed_diff_vbar = (vbar_chart(corr_df,filtered_data))
     occ_diff_vbar = (vbar_chart(corr_df,filtered_data))
     volume_diff_vbar = (vbar_chart(corr_df,filtered_data))
 
     base_map = make_base_map(map_width=450,map_height=960, xaxis=None, yaxis=None,
-                xrange=(-9990000,-9619944), yrange=(5011119,5310000),plot_tools="pan,wheel_zoom,reset,save")
+                xrange=(-9810000, -9745000), yrange=(5130000, 5130000),plot_tools="pan,wheel_zoom,reset,save,hover")
+
+    hwy_src = make_line_data(hwynet_shp, corridor_select.value)
+
+    hwy_map = make_line_map(base_map, hwy_src)
 
     select_content =  row(
            #PANEL
            column(panel_title, panel_text, corridor_select,date_picker_start,
                date_picker_end, day_of_week, time_of_day,tod_description,
-               select_data, height = 1000, css_classes = ["w3-sidebar", "w3-bar-block","w3-darkgrey"]),
+               select_data, css_classes = ["w3-sidebar", "w3-bar-block","w3-darkgrey"], width = widget_width + 70, height = 1500),
            column(css_classes=["w3-col"], width = 275 ),
           #CONTENT
            column(summary_title,
                 row(Spacer(width=20),
-                    column(Spacer(height=10),
-                           row(summary_table,Spacer(width=50),bar_viz_chart,css_classes = ["w3-panel","w3-white","w3-card-4"]),
+                    column(Spacer(height=50),
+                           row(column(summary_table,sum_tbl_def),column(Spacer(width=50)),column(bar_viz_chart,height = 350),
+                           height = 350,css_classes = ["w3-panel","w3-white","w3-card-4"]),
                            Spacer(height=10),
-                           row(volume_scatter,Spacer(width=10),time_scatter, css_classes = ["w3-panel","w3-white","w3-card-4"], width = 650),
+                           row(volume_scatter,Spacer(width=100),speed_scatter, css_classes = ["w3-panel","w3-white","w3-card-4"]),
                            Spacer(height=10),
-                           row(column(speed_diff_vbar,occ_diff_vbar,volume_diff_vbar), css_classes = ["w3-panel","w3-white","w3-card-4"], width = 1050),
+                           row(column(speed_diff_vbar,occ_diff_vbar,volume_diff_vbar), css_classes = ["w3-panel","w3-white","w3-card-4"]),
                 ),
-                    row(Spacer(width=20),column(Spacer(height=10),column(base_map, css_classes = ["w3-panel","w3-white","w3-card-4"],width = 500)))
               ), css_classes=["w3-container", "w3-row-padding"]),
+          column(hwy_map, css_classes = ["w3-sidebar-right","w3-panel","w3-white"],width = 500),
           css_classes = ["w3-container","w3-light-grey"], width = 2000, height = 1200)
 
     return select_content
