@@ -573,6 +573,13 @@ def selection_tab(rtdap_data,hwynet_shp):
     volume_scatter.line('x','y', source = v_line, line_color = 'red')
     volume_scatter.circle('x', 'y', size=5, source=v_pt)
 
+    scatter_def = Div(text="""The <b>Volume</b> and <b>Speed</b> scatter plots compare mean selected values by MHN link (AAB)
+                            to mean values for all years.<br>
+                            Review data points and outliers by using the selection lasso tool to select subset. <br>
+                            Click the <i>Rest tool</i> to deselect points.""",
+                    css_classes = ["small"], width = 850)
+
+
 
     corr_df = rtdap_data.loc[rtdap_data['ROADNAME'] == corridor_select.value]
     speed_diff_vbar = (vbar_chart(corr_df,filtered_data))
@@ -596,10 +603,11 @@ def selection_tab(rtdap_data,hwynet_shp):
            column(summary_title,
                 row(Spacer(width=20),
                     column(Spacer(height=50),
-                           row(column(summary_table,row(sum_tbl_def, Spacer(width=10), tbl_def)),column(Spacer(width=50)),column(bar_viz_chart,height = 350),
-                           height = 350,css_classes = ["w3-panel","w3-white","w3-card-4"]),
+                           row(column(summary_table,row(sum_tbl_def, Spacer(width=10), tbl_def)),column(Spacer(width=50)),
+                           column(bar_viz_chart,height = 350),height = 350,css_classes = ["w3-panel","w3-white","w3-card-4"]),
                            Spacer(height=10),
-                           row(volume_scatter,Spacer(width=100),speed_scatter, css_classes = ["w3-panel","w3-white","w3-card-4"]),
+                           column(row(volume_scatter,Spacer(width=125),speed_scatter),scatter_def,
+                           css_classes = ["w3-panel","w3-white","w3-card-4"], width = 1000),
                            Spacer(height=10),
                            row(column(speed_diff_vbar,occ_diff_vbar,volume_diff_vbar), css_classes = ["w3-panel","w3-white","w3-card-4"]),
                 ),
