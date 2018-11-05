@@ -154,6 +154,6 @@ tab_0 = Panel(child=l0, title ='Overview')
 tab_2 = Panel(child=analytics_tab(), title ='Analytics')
 tab_3 = Panel(child=compare_tab(), title ='Comparison')
 
-tabs = Tabs(tabs = [tab_0, tab_1, tab_2, tab_3], sizing_mode = "scale_width")
+tabs = Tabs(tabs = [tab_0, tab_2, tab_3], sizing_mode = "scale_width")
 
 curdoc().add_root(tabs)
