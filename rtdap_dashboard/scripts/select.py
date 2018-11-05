@@ -170,6 +170,37 @@ def selection_tab(rtdap_data,hwynet_shp):
 
         return df_groupby[['Frequency','Mean','Mean Diff','Missing Values']]
 
+    def vbar_chart_src(full_df, df, value, label):
+        """
+        returns bokeh horizontal barchart representing mean % diff
+
+        Keyword arguments:
+        df -- dataframe to derive content of barchart
+        col -- column name for values to diplay in graph
+        """
+        df_avg = full_df.groupby('ABB').agg({value:np.mean})
+
+        df_select = df.groupby('ABB').agg({value:np.mean})
+        df_select.columns = [label]
+
+        diff = df_avg.merge(df_select,how='left',left_index=True, right_index=True).fillna(0)
+        diff_no_zero = diff.loc[(diff[value] > 0 ) & (diff[label] > 0)]
+        diff_no_zero[label+'_difference'] = ((diff_no_zero[value] - diff_no_zero[label])/diff_no_zero[label]) * 100
+        diff_no_zero = diff_no_zero.reset_index()
+
+        min_label = int(diff_no_zero[label+'_difference'].min())
+        max_label = int(diff_no_zero[label+'_difference'].max())
+
+        bin_values = list(range(min_label,max_label))
+        labels = bin_values[:-2]
+
+        diff_no_zero['bins'] = pd.cut(diff_no_zero[label+'_difference'],bins=list(range(-50,50)),
+                                     labels = list(range(-50,50))[:-1])
+
+        source = ColumnDataSource(data = diff_no_zero.groupby('bins').agg({label+'_difference':'count'}).round().reset_index())
+
+        return source
+
     def vbar_chart(full_df, df):
         """
         returns bokeh horizontal barchart representing mean % diff
@@ -185,13 +216,13 @@ def selection_tab(rtdap_data,hwynet_shp):
 
         diff = df_avg.merge(df_select,how='left',left_index=True, right_index=True).fillna(0)
         diff_no_zero = diff.loc[(diff['avg_speed'] > 0 )& (diff['speed'] > 0)]
-        diff_no_zero['speed_difference'] = diff_no_zero['avg_speed'] - diff_no_zero['speed']
+        diff_no_zero['speed_difference'] = ((diff_no_zero['avg_speed'] - diff_no_zero['speed'])/diff_no_zero['speed']) * 100
         diff_no_zero = diff_no_zero.reset_index()
 
-        diff_no_zero['bins'] = pd.cut(diff_no_zero['speed_difference'],bins=list(range(-20,22)),
-                                     labels = list(range(-20,22))[:-1])
+        diff_no_zero['bins'] = pd.cut(diff_no_zero['speed_difference'],bins=list(range(-100,100)),
+                                     labels = list(range(-100,99))[:-1])
 
-        source = ColumnDataSource(data = diff_no_zero.groupby('bins').agg({'speed_difference':'count'}).reset_index())
+        source = ColumnDataSource(data = diff_no_zero.groupby('bins').agg({'speed_difference':'count'}).round().reset_index())
 
         p = figure(plot_width=1000, plot_height=300, title="Speed Difference Distribution", toolbar_location="above")
 
@@ -426,6 +457,16 @@ def selection_tab(rtdap_data,hwynet_shp):
             v_line.data.update(v_line_new.data)
             v_pt.data.update(v_pt_new.data)
 
+            #vbar diff bins
+            speed_vsrc_new = vbar_chart_src(df_for_avg,filtered_data,'avg_speed','Speed')
+            speed_vsrc.data.update(speed_vsrc_new.data)
+
+            occ_vsrc_new = vbar_chart_src(df_for_avg,filtered_data,'avg_occupancy','Occupancy')
+            occ_vsrc.data.update(occ_vsrc_new.data)
+
+            vol_vsrc_new = vbar_chart_src(df_for_avg,filtered_data,'avg_volume','Volume')
+            vol_vsrc.data.update(vol_vsrc_new.data)
+
     #-----------------------------------------------------------------------------------------------------------------
     #Data Review Panel
 
@@ -582,9 +623,35 @@ def selection_tab(rtdap_data,hwynet_shp):
 
 
     corr_df = rtdap_data.loc[rtdap_data['ROADNAME'] == corridor_select.value]
-    speed_diff_vbar = (vbar_chart(corr_df,filtered_data))
-    occ_diff_vbar = (vbar_chart(corr_df,filtered_data))
-    volume_diff_vbar = (vbar_chart(corr_df,filtered_data))
+    #speed_diff_vbar = (vbar_chart(corr_df,filtered_data))
+    def style(p):
+        p.xgrid.visible = False
+        p.ygrid.visible = False
+        #p.background_fill_color = None
+        p.background_fill_alpha = 0.5
+        p.border_fill_color = None
+        p.xaxis.axis_label = "% Difference (Mean (Selection) - Mean (2015 - 2017))"
+        p.yaxis.axis_label = "Frequency"
+
+        return p
+
+    speed_vsrc = vbar_chart_src(df_for_avg,filtered_data,'avg_speed','Speed')
+    speed_diff_vbar = figure(plot_width=1000, plot_height=300, title="Speed Difference Distribution", toolbar_location="above")
+    speed_diff_vbar.vbar(x='bins' , top='Speed_difference', width=1, color='navy', alpha=0.5, source = speed_vsrc)
+    style(speed_diff_vbar)
+
+    occ_vsrc = vbar_chart_src(df_for_avg,filtered_data,'avg_occupancy','Occupancy')
+    occ_diff_vbar = figure(plot_width=1000, plot_height=300, title="Occupancy Difference Distribution", toolbar_location="above")
+    occ_diff_vbar.vbar(x='bins' , top='Occupancy_difference', width=1, color='navy', alpha=0.5, source = occ_vsrc)
+    style(occ_diff_vbar)
+
+    vol_vsrc = vbar_chart_src(df_for_avg,filtered_data,'avg_volume','Volume')
+    volume_diff_vbar = figure(plot_width=1000, plot_height=300, title="Volume Difference Distribution", toolbar_location="above")
+    volume_diff_vbar.vbar(x='bins' , top='Volume_difference', width=1, color='navy', alpha=0.5, source = vol_vsrc)
+    style(volume_diff_vbar)
+
+    #p.yaxis.visible = False
+    #p.xaxis.formatter = NumeralTickFormatter(format="0.f%")
 
     base_map = make_base_map(map_width=450,map_height=960, xaxis=None, yaxis=None,
                 xrange=(-9810000, -9745000), yrange=(5130000, 5130000),plot_tools="pan,wheel_zoom,reset,save,hover")
