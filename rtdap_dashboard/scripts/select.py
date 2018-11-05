@@ -512,12 +512,22 @@ def selection_tab(rtdap_data,hwynet_shp):
                                                     '{:20,}'.format],classes=[ "w3-table" , "w3-hoverable","w3-small"]))
 
     #Descriptive text
-    sum_tbl_def = Div(text="""Lorem Ipsum is simply dummy text of the printing and
-    typesetting industry. Lorem Ipsum has been the industry's standard
-    dummy text ever since the 1500s, when an unknown printer took a
-     galley of type and scrambled it to make a type specimen book""")
+    sum_tbl_def = Div(text="The <b>" +corridor_select.value + """</b> summary includes a snap shot of speed, occupancy,
+                    and volume based on the date and time period selections in the <b>Data Review panel</b>. Records from
+                    the RTDAP were aggregated up to hourly averages for each sensor location. Each sensor was then related
+                    to the CMAP major highway network (MHN) summarize speed, occupancy, and volume by corridor.""",
+                    css_classes = ["small"], width = 250)
 
-    line = Div(text="<hr>", css_classes = ["w3-container"], width = 1000)
+    tbl_def = Div(text="""<b>Table Definitions</b>:<br>
+                          <ul>
+                          <li><b>Frequency</b> - Number of rtdap records</li>
+                          <li><b>Mean</b> - Average for selected time period</li>
+                          <li><b>Mean Diff</b> - Difference between mean value for selected year
+                                                 mean for all years (2015 - 2017)</li>
+                         <li><b>Missing Values</b> - Number of records with null values</li>
+                          </ul>""",css_classes = ["small"], width = 250)
+
+    line = Div(text="<hr>", css_classes = ["w3-container"], width = 500)
     #-----------------------------------------------------------------------------------------------------------------
 
 
@@ -579,7 +589,7 @@ def selection_tab(rtdap_data,hwynet_shp):
            column(summary_title,
                 row(Spacer(width=20),
                     column(Spacer(height=50),
-                           row(column(summary_table,sum_tbl_def),column(Spacer(width=50)),column(bar_viz_chart,height = 350),
+                           row(column(summary_table,row(sum_tbl_def, Spacer(width=10), tbl_def)),column(Spacer(width=50)),column(bar_viz_chart,height = 350),
                            height = 350,css_classes = ["w3-panel","w3-white","w3-card-4"]),
                            Spacer(height=10),
                            row(volume_scatter,Spacer(width=100),speed_scatter, css_classes = ["w3-panel","w3-white","w3-card-4"]),

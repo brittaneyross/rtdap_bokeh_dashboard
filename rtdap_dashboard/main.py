@@ -34,7 +34,8 @@ from scripts.select import selection_tab
 
 #table
 dateparse = lambda x: pd.datetime.strptime(x, '%Y-%m-%d')
-vds_table = pd.read_csv(join(dirname(__file__),'data','test.csv.gz'), compression='gzip', dtype={'hour':int}, parse_dates=['date'], date_parser=dateparse)
+#vds_table = pd.read_csv(join(dirname(__file__),'data','test.csv.gz'), compression='gzip', dtype={'hour':int},
+#parse_dates=['date'], date_parser=dateparse)
 hwynet_shp = join(dirname(__file__),'data','shapefiles','hwynet_sensor_loc.shp')
 
 #
@@ -149,7 +150,7 @@ l2=Div(text="Test")
 l3=Div(text="Test")
 
 tab_0 = Panel(child=l0, title ='Overview')
-tab_1 = Panel(child=selection_tab(vds_table,hwynet_shp), title ='Data Selection', css_classes = ["w3-light-grey"])
+#tab_1 = Panel(child=selection_tab(vds_table,hwynet_shp), title ='Data Selection', css_classes = ["w3-light-grey"])
 tab_2 = Panel(child=analytics_tab(), title ='Analytics')
 tab_3 = Panel(child=compare_tab(), title ='Comparison')
 
