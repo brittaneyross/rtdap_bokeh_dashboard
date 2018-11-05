@@ -295,11 +295,14 @@ def selection_tab(rtdap_data,hwynet_shp):
         return source
 
     def scatter_figure(title_text):
-        p = figure(plot_width=400, plot_height=400, tools=['hover','lasso_select','reset'], toolbar_location="above",
+        p = figure(plot_width=425, plot_height=400, tools=['hover','lasso_select','reset'], toolbar_location="above",
                    title=title_text)
 
         p.background_fill_alpha = 0.5
         p.border_fill_color = None
+        p.xaxis.axis_label = "Mean (2015 - 2017)"
+        p.yaxis.axis_label = "Mean (Selection)"
+
 
         return p
 
@@ -520,7 +523,7 @@ def selection_tab(rtdap_data,hwynet_shp):
 
     tbl_def = Div(text="""<b>Table Definitions</b>:<br>
                           <ul>
-                          <li><b>Frequency</b> - Number of rtdap records</li>
+                          <li><b>Frequency</b> - Number of RTDAP records</li>
                           <li><b>Mean</b> - Average for selected time period</li>
                           <li><b>Mean Diff</b> - Difference between mean value for selected year
                                                  mean for all years (2015 - 2017)</li>
