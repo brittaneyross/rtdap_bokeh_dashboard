@@ -295,7 +295,7 @@ def selection_tab(rtdap_data,hwynet_shp):
         return source
 
     def scatter_figure(title_text):
-        p = figure(plot_width=400, plot_height=400, tools=['hover','box_select'], toolbar_location="above",
+        p = figure(plot_width=400, plot_height=400, tools=['hover','lasso_select','reset'], toolbar_location="above",
                    title=title_text)
 
         p.background_fill_alpha = 0.5
