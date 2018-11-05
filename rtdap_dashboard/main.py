@@ -34,18 +34,16 @@ from scripts.select import selection_tab
 
 #table
 dateparse = lambda x: pd.datetime.strptime(x, '%Y-%m-%d')
-#vds_table = pd.read_csv(join(dirname(__file__),'data','test.csv.gz'), compression='gzip', dtype={'hour':int},
-#parse_dates=['date'], date_parser=dateparse)
+vds_table = pd.read_csv(join(dirname(__file__),'data','test.csv.gz'), compression='gzip', dtype={'hour':int},parse_dates=['date'], date_parser=dateparse)
 hwynet_shp = join(dirname(__file__),'data','shapefiles','hwynet_sensor_loc.shp')
 
-# #
-# vds_table['ROADNAME'] = vds_table['ROADNAME'].fillna('N/A')
-# vds_table['ROADNAME'] = np.where(vds_table['ROADNAME'] == '0', 'N/A',vds_table['ROADNAME'])
-#
-# vds_table['hour'] = vds_table['hour'].replace([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-#                                               [1,1,1,1,1,1,2,3,3,4, 5, 5, 5, 5, 6, 6, 7, 7, 8, 8, 1, 1, 1, 1])
-#
-# vds_table['dow'] = vds_table['dow'].replace([1,2,3,4,5],['Monday','Tuesday','Wednesday','Thursday','Friday'])
+vds_table['ROADNAME'] = vds_table['ROADNAME'].fillna('N/A')
+vds_table['ROADNAME'] = np.where(vds_table['ROADNAME'] == '0', 'N/A',vds_table['ROADNAME'])
+
+vds_table['hour'] = vds_table['hour'].replace([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+                                               [1,1,1,1,1,1,2,3,3,4, 5, 5, 5, 5, 6, 6, 7, 7, 8, 8, 1, 1, 1, 1])
+
+vds_table['dow'] = vds_table['dow'].replace([1,2,3,4,5],['Monday','Tuesday','Wednesday','Thursday','Friday'])
 
 #side panel and view
 def analytics_tab():
