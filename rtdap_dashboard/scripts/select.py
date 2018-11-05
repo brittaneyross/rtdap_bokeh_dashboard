@@ -388,6 +388,10 @@ def selection_tab(rtdap_data,hwynet_shp):
         summary_df = summary_df.append(volume)
 
         summary_title.text = "<h1>"+corridor_select.value+" Summary</h1>"
+        sum_tbl_def.text ="The <b>" +corridor_select.value + """</b> summary includes a snap shot of speed, occupancy,
+                        and volume based on the date and time period selections in the <b>Data Review panel</b>. Records from
+                        the RTDAP were aggregated up to hourly averages for each sensor location. Each sensor was then related
+                        to the CMAP major highway network (MHN) summarize speed, occupancy, and volume by corridor."""
 
         summary_df_tbl = summary_df.copy()
         summary_df_tbl['Mean Diff'] = summary_df_tbl['Mean Diff'] * 100
